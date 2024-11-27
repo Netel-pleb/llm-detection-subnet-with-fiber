@@ -35,6 +35,25 @@ import torch
 from detection.validator.segmentation_processer import SegmentationProcesser
 
 
+
+
+
+import json
+import time
+from httpx import Response
+from pydantic import ValidationError
+from fiber.chain_interactions.models import Node
+from fiber.validator import client
+
+
+
+
+
+
+
+
+
+
 async def dendrite_with_retries(dendrite: bt.dendrite, axons: list, synapse: TextSynapse, deserialize: bool, timeout: float, cnt_attempts=3) -> List[TextSynapse]:
     res: List[TextSynapse | None] = [None] * len(axons)
     idx = list(range(len(axons)))
@@ -167,10 +186,10 @@ async def forward(self):
     # Define how the validator selects a miner to query, how often, etc.
     # bt.logging.info(f"STEPS {self.step} {self.step%300} {not (self.step % 300)}")
 
-    available_axon_size = len(self.metagraph.axons) - 1  # Except our own
+    available_axon_size = len(self.metagraph.nodes) - 1  # Except our own
     miner_selection_size = min(available_axon_size, self.config.neuron.sample_size)
     miner_uids = get_random_uids(self, k=miner_selection_size)
-    axons = [self.metagraph.axons[uid] for uid in miner_uids]
+    
 
     start_time = time.time()
     queries, labels = await self.build_queries()
@@ -208,3 +227,102 @@ async def forward(self):
     self.update_scores(rewards_tensor, uids_tensor)
 
     self.log_step(miner_uids, metrics, rewards)
+    
+    
+    
+    
+    
+async def query_nonstream(
+    # config: Config,
+    # contender: Contender,
+    node: Node,
+    payload: dict,
+    # response_model: type[ImageResponse],
+    synthetic_query: bool,
+    job_id: str,
+) -> bool:
+    # node_id = contender.node_id
+
+    assert node.fernet is not None
+    assert node.symmetric_key_uuid is not None
+    # task_config = tcfg.get_enabled_task_config(contender.task)
+    time_before_query = time.time()
+    # if task_config is None:
+    #     logger.error(f"Task config not found for task: {contender.task}")
+    #     return False
+
+    try:
+        response = await client.make_non_streamed_post(
+            # httpx_client=config.httpx_client,
+            server_address=client.construct_server_address(
+                node,
+                # replace_with_docker_localhost=config.replace_with_docker_localhost,
+                # replace_with_localhost=config.replace_with_localhost,
+            ),
+            # validator_ss58_address=config.ss58_address,
+            miner_ss58_address=node.hotkey,
+            fernet=node.fernet,
+            # keypair=config.keypair,
+            symmetric_key_uuid=node.symmetric_key_uuid,
+            # endpoint=task_config.endpoint,
+            payload=payload,
+            # timeout=task_config.timeout,
+        )
+    except Exception as e:
+    #     logger.error(f"Error when querying node: {node.node_id} for task: {contender.task}. Error: {e}")
+    #     query_result = _get_500_query_result(node_id=node_id, contender=contender)
+    #     await utils.adjust_contender_from_result(
+    #         config=config, query_result=query_result, contender=contender, synthetic_query=synthetic_query, payload=payload
+    #     )
+        return False
+
+    response_time = time.time() - time_before_query
+    try:
+        pass
+    #     formatted_response = get_formatted_response(response, response_model)
+    except Exception as e:
+    #     logger.error(f"Error when deserializing response for task: {contender.task}. Error: {e}")
+    #     query_result = _get_500_query_result(node_id=node_id, contender=contender)
+    #     await utils.adjust_contender_from_result(
+    #         config=config, query_result=query_result, contender=contender, synthetic_query=synthetic_query, payload=payload
+    #     )
+        return False
+    
+
+    # if formatted_response is not None:
+    #     query_result = utility_models.QueryResult(
+    #         formatted_response=formatted_response,
+    #         node_id=node_id,
+    #         node_hotkey=contender.node_hotkey,
+    #         response_time=response_time,
+    #         task=contender.task,
+    #         status_code=response.status_code,
+    #         success=True,
+    #     )
+
+    #     logger.info(f"✅ Queried node: {node_id} for task: {contender.task} - time: {response_time}")
+    #     await handle_nonstream_event(
+    #         config, formatted_response.model_dump_json(), synthetic_query, job_id, status_code=response.status_code
+    #     )
+    #     await utils.adjust_contender_from_result(
+    #         config=config, query_result=query_result, contender=contender, synthetic_query=synthetic_query, payload=payload
+    #     )
+    #     return True
+    # else:
+    #     query_result = utility_models.QueryResult(
+    #         formatted_response=None,
+    #         node_id=node_id,
+    #         node_hotkey=contender.node_hotkey,
+    #         response_time=None,
+    #         task=contender.task,
+    #         status_code=response.status_code,
+    #         success=False,
+    #     )
+    #     logger.debug(
+    #         f"❌ queried node: {node_id} for task: {contender.task}. Response: {response.text}, status code: {response.status_code}"
+    #     )
+    #     await utils.adjust_contender_from_result(
+    #         config=config, query_result=query_result, contender=contender, synthetic_query=synthetic_query, payload=payload
+    #     )
+    #     return False
+

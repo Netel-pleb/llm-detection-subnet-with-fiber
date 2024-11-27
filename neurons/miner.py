@@ -37,6 +37,41 @@ from miners.deberta_classifier import DebertaClassifier
 hf_logging.set_verbosity(40)
 
 
+
+
+
+
+
+
+
+
+
+
+import os
+
+# from dotenv import load_dotenv
+
+# load_dotenv("dev.env")  # Important to load this before importing anything else!
+
+from fiber.logging_utils import get_logger
+from fiber.miner import server
+from fiber.miner.endpoints.subnet import factory_router as get_subnet_router
+from fiber.miner.middleware import configure_extra_logging_middleware
+logger = get_logger(__name__)
+
+app = server.factory_app(debug=True)
+
+app.include_router(get_subnet_router())
+
+
+
+
+
+
+
+
+
+
 class Miner(BaseMinerNeuron):
     """
     Your miner neuron class. You should use this class to define your miner's behavior. In particular, you should replace the forward function with your own logic. You may also want to override the blacklist and priority functions according to your needs.
@@ -58,6 +93,20 @@ class Miner(BaseMinerNeuron):
                                            device=self.device)
 
         self.load_state()
+
+
+
+
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=7999)
+
+
+
+
+
+
+
 
     async def forward(
         self, synapse: detection.protocol.TextSynapse

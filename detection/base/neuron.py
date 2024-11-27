@@ -30,6 +30,16 @@ from detection import __spec_version__ as spec_version
 from detection import version_url
 
 
+from substrateinterface import SubstrateInterface
+from fiber.constants import FINNEY_SUBTENSOR_ADDRESS
+from fiber.chain_interactions.metagraph import Metagraph
+from fiber.chain_interactions.interface import get_substrate
+from fiber.chain_interactions.chain_utils import load_hotkey_keypair
+from substrateinterface import SubstrateInterface, Keypair
+from datetime import date, datetime, timedelta, time
+from operator import itemgetter, attrgetter
+
+
 class BaseNeuron(ABC):
     """
     Base class for Bittensor miners. This class is abstract and should be inherited by a subclass. It contains the core logic for all neurons; validators and miners.
@@ -51,14 +61,31 @@ class BaseNeuron(ABC):
     def config(cls):
         return config(cls)
 
-    subtensor: "bt.subtensor"
-    wallet: "bt.wallet"
-    metagraph: "bt.metagraph"
+    # subtensor: "bt.subtensor"
+    # wallet: "bt.wallet"
+    # metagraph: "bt.metagraph"
     spec_version: int = spec_version
 
+    keypair: Keypair
+
+
+    # @property
+    # def block(self):
+    #     return ttl_get_block(self)
+    
+    
     @property
     def block(self):
-        return ttl_get_block(self)
+        if not self.last_block_fetch or (datetime.now() - self.last_block_fetch).seconds >= 12:
+            self.current_block = self.substrate.get_block_number(None)  # type: ignore
+            self.last_block_fetch = datetime.now()
+            self.attempted_set_weights = False
+
+        return self.current_block
+
+    def metagraph_nodes(self):
+        return sorted(self.metagraph.nodes.values(), key=attrgetter("node_id"))
+
 
     def __init__(self, config=None):
         base_config = copy.deepcopy(config or BaseNeuron.config())
@@ -81,20 +108,32 @@ class BaseNeuron(ABC):
 
         # The wallet holds the cryptographic key pairs for the miner.
 
-        self.wallet = bt.wallet(config=self.config)
+        # self.wallet = bt.wallet(config=self.config)
         while True:
             try:
                 bt.logging.info("Initializing subtensor and metagraph")
-                self.subtensor = bt.subtensor(config=self.config)
-                self.metagraph = self.subtensor.metagraph(self.config.netuid)
+                # self.subtensor = bt.subtensor(config=self.config)
+                # self.metagraph = self.subtensor.metagraph(self.config.netuid)
+                
+                subtensor_url = FINNEY_SUBTENSOR_ADDRESS
+                self.substrate = get_substrate(
+                    subtensor_address = subtensor_url
+                )
+                self.metagraph = Metagraph(
+                    substrate = self.substrate,
+                    netuid =  self.config.netuid,
+                    load_old_nodes = True,
+                )
+                self.metagraph.sync_nodes()
+                
                 break
             except Exception as e:
                 bt.logging.error("Couldn't init subtensor and metagraph with error: {}".format(e))
                 bt.logging.error("If you use public RPC endpoint try to move to local node")
                 time.sleep(5)
 
-        bt.logging.info(f"Wallet: {self.wallet}")
-        bt.logging.info(f"Subtensor: {self.subtensor}")
+        # bt.logging.info(f"Wallet: {self.wallet}")
+        # bt.logging.info(f"Subtensor: {self.subtensor}")
         bt.logging.info(f"Metagraph: {self.metagraph}")
 
         # Check if the miner is registered on the Bittensor network before proceeding further.
@@ -103,10 +142,22 @@ class BaseNeuron(ABC):
         # Parse versions for weight_version check
         self.parse_versions()
 
+        self.hotkeys = list(self.metagraph.nodes.keys())
+        
+        self.keypair = load_hotkey_keypair(
+            wallet_name=self.config["wallet.name"],
+            hotkey_name=self.config["wallet.hotkey"],
+        )        
+        
+        self.hotkey = self.keypair.ss58_address
+        self.uid = self.hotkeys.index(self.hotkey)
+
+            
+
         # Each miner gets a unique identity (UID) in the network for differentiation.
-        self.uid = self.metagraph.hotkeys.index(
-            self.wallet.hotkey.ss58_address
-        )
+        # self.uid = self.metagraph.hotkeys.index(
+        #     self.wallet.hotkey.ss58_address
+        # )
         bt.logging.info(
             f"Running neuron on subnet: {self.config.netuid} with uid {self.uid} using network: {self.subtensor.chain_endpoint}"
         )
@@ -126,9 +177,10 @@ class BaseNeuron(ABC):
         Wrapper for synchronizing the state of the network for the given miner or validator.
         """
         # Ensure miner or validator hotkey is still registered on the network.
-        self.check_registered()
-        
+        # self.check_registered()
+        self.check_registration()
 
+        
         try:
             if self.should_sync_metagraph():
                 self.last_update = self.block
@@ -146,30 +198,29 @@ class BaseNeuron(ABC):
             bt.logging.error("If you use public RPC endpoint try to move to local node")
             time.sleep(5)
             
-    def check_registered(self):
-        # --- Check for registration.
-        if not self.subtensor.is_hotkey_registered(
-            netuid=self.config.netuid,
-            hotkey_ss58=self.wallet.hotkey.ss58_address,
-        ):
-            bt.logging.error(
-                f"Wallet: {self.wallet} is not registered on netuid {self.config.netuid}."
-                f" Please register the hotkey using `btcli subnets register` before trying again"
-            )
-            exit()
+    def check_registration(self):
+        hotkey = self.keypair.ss58_address
+        # if hotkey not in self.hotkeys:
+            # logger.error(
+            #     f"Wallet: {self.keypair} is not registered on netuid {self.metagraph.netuid}."
+            # )
 
     def should_sync_metagraph(self):
         """
         Check if enough epoch blocks have elapsed since the last checkpoint to sync.
         """
         if self.neuron_type != "MinerNeuron":
-            last_update = self.metagraph.last_update[self.uid]
+            # last_update = self.metagraph.last_update[self.uid]
+            last_update = self.metagraph.nodes[self.keypair.ss58_address].last_updated
+            blocks_elapsed = self.block - last_update
         else:
             last_update = self.last_update
             
-        return (
-            self.block - last_update
-        ) > self.config.neuron.epoch_length
+        # return (
+        #     self.block - last_update
+        # ) > self.config.neuron.epoch_length
+        return (blocks_elapsed > self.config.neuron.epoch_length)
+
 
     def should_set_weights(self) -> bool:
         # Don't set weights on initialization.

@@ -1,0 +1,26 @@
+self.substrate
+self.metagraph
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # Filter non serving axons.
+    # if not metagraph.axons[uid].is_serving:
+    #     return False
+    (venv) (base) eros@macmini llm-detection % python fiber/scripts/post_ip_to_chain.py --wallet.name mytest --wallet.hotkey miner1 --netuid 251 --external_ip 172.20.20.20 --subtensor.network test --subtensor.chain_endpoint wss://test.finney.opentensor.ai:443/ --external_port 8090

@@ -26,6 +26,20 @@ import bittensor as bt
 from detection.base.neuron import BaseNeuron
 
 
+
+from fiber.miner import server
+from fiber.miner.endpoints.subnet import factory_router as get_subnet_router
+from fiber.miner.middleware import configure_extra_logging_middleware
+
+
+
+
+
+
+
+
+
+
 class BaseMinerNeuron(BaseNeuron):
     """
     Base class for Bittensor miners.
@@ -56,6 +70,26 @@ class BaseMinerNeuron(BaseNeuron):
         self.is_running: bool = False
         self.thread: threading.Thread = None
         self.lock = asyncio.Lock()
+        
+        
+        self.app = server.factory_app(dubug = True)
+        
+        self.app.include_router(get_subnet_router())
+        import uvicorn
+        
+        uvicorn.run(self.app, host="127.0.0.1", port=7999)
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
 
     def run(self):
         """

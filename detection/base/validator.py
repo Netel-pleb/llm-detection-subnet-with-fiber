@@ -21,7 +21,7 @@ import torch
 import asyncio
 import threading
 import bittensor as bt
-
+import bittensor
 from typing import List
 from traceback import print_exception
 
@@ -38,11 +38,46 @@ import time
 import json
 
 
+
+
+
+from substrateinterface import SubstrateInterface
+from fiber.constants import FINNEY_SUBTENSOR_ADDRESS
+from fiber.chain_interactions.metagraph import Metagraph
+from fiber.chain_interactions.interface import get_substrate
+from fiber.chain_interactions.chain_utils import load_hotkey_keypair
+from substrateinterface import SubstrateInterface, Keypair
+from datetime import date, datetime, timedelta, time
+from fiber.chain_interactions.weights import set_node_weights, process_weights_for_netuid, convert_weights_and_uids_for_emit
+from typing import Tuple
+from fiber.chain_interactions.post_ip_to_chain import post_node_ip_to_chain
+from fiber.chain_interactions.models import Node
+import httpx
+from fiber.validator import handshake, client
+from cryptography.fernet import Fernet
+
+
+
+
 class BaseValidatorNeuron(BaseNeuron):
     """
     Base class for Bittensor validators. Your validator should inherit from this class.
     """
     neuron_type: str = "ValidatorNeuron"
+
+    keypair: Keypair
+
+    last_metagraph_sync: int = 0
+
+    @property
+    def block(self):
+        if not self.last_block_fetch or (datetime.now() - self.last_block_fetch).seconds >= 12:
+            self.current_block = self.substrate.get_block_number(None)  # type: ignore
+            self.last_block_fetch = datetime.now()
+            self.attempted_set_weights = False
+
+        return self.current_block
+
 
     def __init__(self, config=None):
         super().__init__(config=config)
@@ -68,7 +103,18 @@ class BaseValidatorNeuron(BaseNeuron):
 
         # Init sync with the network. Updates the metagraph.
         self.sync()
-
+        subtensor_url = FINNEY_SUBTENSOR_ADDRESS
+        self.substrate = get_substrate(
+            subtensor_address = subtensor_url
+        )        
+        self.metagraph = Metagraph(
+            substrate = self.substrate,
+            netuid =  self.config.netuid,
+            load_old_nodes = True,
+        )
+        self.metagraph.sync_nodes()
+        self.hotkeys = list(self.metagraph.nodes.keys())
+        self.stakes = [node.stake for node in self.metagraph.nodes.values()]
         # Serve axon to enable external connections.
         if not self.config.neuron.axon_off:
             self.serve_axon()
@@ -85,32 +131,217 @@ class BaseValidatorNeuron(BaseNeuron):
         self.thread: threading.Thread = None
         self.lock = asyncio.Lock()
 
+    def sync_chain_nodes(self, block: int):
+        # logger.info("Syncing metagraph")
+
+        self.metagraph.sync_nodes()
+
+        self.check_registration()
+
+        if len(self.hotkeys) != len(self.metagraph.nodes):
+            self.resize()
+
+            if self.contest_state:
+                new_miner_info = [None] * len(self.metagraph.nodes)
+                length = len(self.hotkeys)
+                new_miner_info[:length] = self.contest_state.miner_info[:length]
+
+                self.contest_state.miner_info = new_miner_info
+
+        nodes = self.metagraph_nodes()
+
+        for uid, hotkey in enumerate(self.hotkeys):
+            if hotkey != nodes[uid].hotkey:
+                # hotkey has been replaced
+                self.reset_miner(uid)
+
+                if self.contest_state:
+                    self.contest_state.miner_info[uid] = None
+
+        self.hotkeys = list(self.metagraph.nodes.keys())
+        self.last_metagraph_sync = block
+
+    def sync(self):
+        """
+        Wrapper for synchronizing the state of the network for the given validator.
+        """
+        # Ensure miner or validator hotkey is still registered on the network.
+        # self.check_registered()
+        self.check_registration()
+
+        try:
+            if self.should_sync_metagraph():
+                self.last_update = self.block
+                self.resync_metagraph()
+                # Parse versions for weight_check
+                self.parse_versions()
+
+            if self.should_set_weights():
+                self.set_weights()
+
+            # Always save state.
+            self.save_state()
+        except Exception as e:
+            bt.logging.error("Coundn't sync metagraph or set weights: {}".format(e))
+            bt.logging.error("If you use public RPC endpoint try to move to local node")
+            time.sleep(5)
+
+    def should_set_weights(self) -> bool:
+        last_update = self.metagraph.nodes[self.keypair.ss58_address].last_updated
+        blocks_elapsed = self.block - last_update
+        epoch_length = self.config.neuron.epoch_length
+
+        return blocks_elapsed >= epoch_length
+
+    def should_sync_metagraph(self):
+        """
+        Check if enough epoch blocks have elapsed since the last checkpoint to sync.
+        """
+        # last_update = self.metagraph.last_update[self.uid]
+        last_metagraph_sync = self.block
+        blocks_elapsed = self.block - last_metagraph_sync
+        # return (
+        #     self.block - last_update
+        # ) > self.config.neuron.epoch_length
+        return (blocks_elapsed > self.config.neuron.epoch_length)
+    
+    
+    
+    
+    
+    
+    async def try_handshake(
+        self,
+        async_client: httpx.AsyncClient,
+        server_address: str,
+        keypair,
+        hotkey
+    ) -> tuple:
+        return await handshake.perform_handshake(
+            async_client, server_address, keypair, hotkey
+        )
+    
+    async def _handshake(self, node: Node, async_client: httpx.AsyncClient) -> Node:
+        node_copy = node.model_copy()
+        server_address = client.construct_server_address(
+            node=node,
+            replace_with_docker_localhost = True,
+            replace_with_localhost = False,
+        )
+
+        try:
+            symmetric_key, symmetric_key_uid = await self.try_handshake(
+                async_client, server_address, self.keypair, node.hotkey
+            )
+        except Exception as e:
+            # error_details = _format_exception(e)
+            # logger.debug(f"Failed to perform handshake with {server_address}. Details:\n{error_details}")
+
+            if isinstance(e, (httpx.HTTPStatusError, httpx.RequestError, httpx.ConnectError)):
+                if hasattr(e, "response"):
+                    # logger.debug(f"Response content: {e.response.text}")
+                    pass
+            return node_copy
+
+        fernet = Fernet(symmetric_key)
+        node_copy.fernet = fernet
+        node_copy.symmetric_key_uuid = symmetric_key_uid
+        return node_copy
+
+    async def perform_handshakes(self, nodes: list[Node]) -> list[Node]:
+        tasks = []
+        shaked_nodes: list[Node] = []
+        for node in nodes:
+            if node.fernet is None or node.symmetric_key_uuid is None:
+                tasks.append(self._handshake(node, httpx.AsyncClient))
+            if len(tasks) > 50:
+                shaked_nodes.extend(await asyncio.gather(*tasks))
+                tasks = []
+
+        if tasks:
+            shaked_nodes.extend(await asyncio.gather(*tasks))
+
+        nodes_where_handshake_worked = [
+            node for node in shaked_nodes if node.fernet is not None and node.symmetric_key_uuid is not None
+        ]
+        if len(nodes_where_handshake_worked) == 0:
+            # logger.info("❌ Failed to perform handshakes with any nodes!")
+            pass
+            return []
+        # logger.info(f"✅ performed handshakes successfully with {len(nodes_where_handshake_worked)} nodes!")
+
+        # async with await config.psql_db.connection() as connection:
+        #     await insert_symmetric_keys_for_nodes(connection, nodes_where_handshake_worked)
+
+        return shaked_nodes    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     def serve_axon(self):
         """Serve axon to enable external connections."""
 
-        bt.logging.info("serving ip to chain...")
+        # bt.logging.info("serving ip to chain...")
+        # try:
+        #     self.axon = bt.axon(wallet=self.wallet, config=self.config)
+        #     # self.axon = bt.axon(wallet=self.wallet, config=self.config
+
+        #     try:
+        #         self.subtensor.serve_axon(
+        #             netuid=self.config.netuid,
+        #             axon=self.axon,
+        #         )
+        #         bt.logging.info(
+        #             f"Running validator {self.axon} on network: {self.config.subtensor.chain_endpoint} with netuid: {self.config.netuid}"
+        #         )
+        #     except Exception as e:
+        #         bt.logging.error(f"Failed to serve Axon with exception: {e}")
+        #         pass
+
+        # except Exception as e:
+        #     bt.logging.error(
+        #         f"Failed to create Axon initialize with exception: {e}"
+        #     )
+        #     pass
         try:
-            self.axon = bt.axon(wallet=self.wallet, config=self.config)
-            # self.axon = bt.axon(wallet=self.wallet, config=self.config
-
-            try:
-                self.subtensor.serve_axon(
-                    netuid=self.config.netuid,
-                    axon=self.axon,
-                )
-                bt.logging.info(
-                    f"Running validator {self.axon} on network: {self.config.subtensor.chain_endpoint} with netuid: {self.config.netuid}"
-                )
-            except Exception as e:
-                bt.logging.error(f"Failed to serve Axon with exception: {e}")
-                pass
-
-        except Exception as e:
-            bt.logging.error(
-                f"Failed to create Axon initialize with exception: {e}"
+            success = post_node_ip_to_chain(
+                substrate = self.substrate,
+                keypair = Keypair,
+                netuid = self.netuid,
+                external_ip = self.external_ip,
+                external_port = self.external_port,
+                coldkey_ss58_address = self.coldkey,
             )
+        except Exception as e:
             pass
-
+        
     async def concurrent_forward(self):
         coroutines = [
             self.forward()
@@ -253,11 +484,11 @@ class BaseValidatorNeuron(BaseNeuron):
         (
             processed_weight_uids,
             processed_weights,
-        ) = bt.utils.weight_utils.process_weights_for_netuid(
+        ) = process_weights_for_netuid(
             uids=self.metagraph.uids.to("cpu"),
             weights=raw_weights.to("cpu"),
             netuid=self.config.netuid,
-            subtensor=self.subtensor,
+            # subtensor=self.subtensor,
             metagraph=self.metagraph,
         )
         bt.logging.debug("processed_weights", processed_weights)
@@ -267,23 +498,32 @@ class BaseValidatorNeuron(BaseNeuron):
         (
             uint_uids,
             uint_weights,
-        ) = bt.utils.weight_utils.convert_weights_and_uids_for_emit(
+        ) = convert_weights_and_uids_for_emit(
             uids=processed_weight_uids, weights=processed_weights
         )
         bt.logging.debug("uint_weights", uint_weights)
         bt.logging.debug("uint_uids", uint_uids)
 
         # Set the weights on chain via our subtensor connection.
-        result, msg = self.subtensor.set_weights(
-            wallet=self.wallet,
-            netuid=self.config.netuid,
-            uids=uint_uids,
-            weights=uint_weights,
-            wait_for_finalization=False,
-            wait_for_inclusion=False,
+        # result, msg = self.subtensor.set_weights(
+        #     wallet=self.wallet,
+        #     netuid=self.config.netuid,
+        #     uids=uint_uids,
+        #     weights=uint_weights,
+        #     wait_for_finalization=False,
+        #     wait_for_inclusion=False,
+        #     version_key=self.spec_version,
+        # )
+        result = set_node_weights(
+            self.substrate,
+            self.keypair,
+            node_ids=list(range(len(self.metagraph.nodes))),
+            node_weights=uint_weights,
+            netuid=self.metagraph.netuid,
+            validator_node_id=self.uid,
             version_key=self.spec_version,
         )
-
+        
         if result is True:
             bt.logging.info("set_weights on chain successfully!")
         else:
@@ -295,25 +535,37 @@ class BaseValidatorNeuron(BaseNeuron):
 
         # Copies state of metagraph before syncing.
         previous_metagraph = copy.deepcopy(self.metagraph)
-
+        
         # Sync the metagraph.
-        self.metagraph.sync(subtensor=self.subtensor)
+        # self.metagraph.sync(subtensor=self.subtensor)
+        nodes = self.metagraph_nodes()
+        
+        self.metagraph.sync_nodes()
+        
+        self.check_registration()
 
         # Check if the metagraph axon info has changed.
-        if previous_metagraph.axons == self.metagraph.axons:
+        # if previous_metagraph.axons == self.metagraph.axons:
+        #     return
+        if self.hotkeys == list(self.metagraph.nodes.keys()):
             return
 
         bt.logging.info(
             "Metagraph updated, re-syncing hotkeys, dendrite pool and moving averages"
         )
         # Zero out all hotkeys that have been replaced.
+        
+        # for uid, hotkey in enumerate(self.hotkeys):
+        #     if hotkey != self.metagraph.hotkeys[uid]:
+        #         self.scores[uid] = 0  # hotkey has been replaced
+        
         for uid, hotkey in enumerate(self.hotkeys):
-            if hotkey != self.metagraph.hotkeys[uid]:
+            if hotkey != nodes[uid].hotkey:
                 self.scores[uid] = 0  # hotkey has been replaced
 
         # Check to see if the metagraph has changed size.
         # If so, we need to add new hotkeys and moving averages.
-        if len(self.hotkeys) < len(self.metagraph.hotkeys):
+        if len(self.hotkeys) != len(self.metagraph.nodes):
             # Update the size of the moving average scores.
             new_moving_average = torch.zeros((self.metagraph.n)).to(
                 self.device
@@ -323,7 +575,8 @@ class BaseValidatorNeuron(BaseNeuron):
             self.scores = new_moving_average
 
         # Update the hotkeys.
-        self.hotkeys = copy.deepcopy(self.metagraph.hotkeys)
+        self.hotkeys = list(self.metagraph.nodes.keys())
+        self.last_metagraph_sync = self.block
 
     def update_scores(self, rewards: torch.FloatTensor, uids: List[int]):
         """Performs exponential moving average on the scores based on the rewards received from the miners."""
