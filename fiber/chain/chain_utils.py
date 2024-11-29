@@ -127,3 +127,14 @@ def query_substrate(
         return_val = query_result.value if return_value else query_result
 
         return substrate, return_val
+
+
+            # with self.substrate as substrate:
+            #     return substrate.query(
+            #         module="SubtensorModule",
+            #         storage_function=name,
+            #         params=params,
+            #         block_hash=(
+            #             None if block is None else substrate.get_block_hash(block)
+            #         ),
+            #     )

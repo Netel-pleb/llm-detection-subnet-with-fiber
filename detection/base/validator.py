@@ -43,15 +43,15 @@ import json
 
 from substrateinterface import SubstrateInterface
 from fiber.constants import FINNEY_SUBTENSOR_ADDRESS
-from fiber.chain_interactions.metagraph import Metagraph
-from fiber.chain_interactions.interface import get_substrate
-from fiber.chain_interactions.chain_utils import load_hotkey_keypair
+from fiber.chain.metagraph import Metagraph
+from fiber.chain.interface import get_substrate
+from fiber.chain.chain_utils import load_hotkey_keypair
 from substrateinterface import SubstrateInterface, Keypair
 from datetime import date, datetime, timedelta, time
-from fiber.chain_interactions.weights import set_node_weights, process_weights_for_netuid, convert_weights_and_uids_for_emit
+from fiber.chain.weights import set_node_weights, process_weights_for_netuid, convert_weights_and_uids_for_emit
 from typing import Tuple
-from fiber.chain_interactions.post_ip_to_chain import post_node_ip_to_chain
-from fiber.chain_interactions.models import Node
+from fiber.chain.post_ip_to_chain import post_node_ip_to_chain
+from fiber.chain.models import Node
 import httpx
 from fiber.validator import handshake, client
 from cryptography.fernet import Fernet
@@ -103,16 +103,28 @@ class BaseValidatorNeuron(BaseNeuron):
 
         # Init sync with the network. Updates the metagraph.
         self.sync()
-        subtensor_url = FINNEY_SUBTENSOR_ADDRESS
-        self.substrate = get_substrate(
-            subtensor_address = subtensor_url
-        )        
-        self.metagraph = Metagraph(
-            substrate = self.substrate,
-            netuid =  self.config.netuid,
-            load_old_nodes = True,
-        )
-        self.metagraph.sync_nodes()
+        while True:
+            try:
+                bt.logging.info("Initializing subtensor and metagraph")
+                # self.subtensor = bt.subtensor(config=self.config)
+                # self.metagraph = self.subtensor.metagraph(self.config.netuid)
+                
+                subtensor_url = FINNEY_SUBTENSOR_ADDRESS
+                self.substrate = get_substrate(
+                    subtensor_address = subtensor_url
+                )
+                self.metagraph = Metagraph(
+                    substrate = self.substrate,
+                    netuid =  self.config.netuid,
+                    load_old_nodes = True,
+                )
+                self.metagraph.sync_nodes()
+                
+                break
+            except Exception as e:
+                bt.logging.error("Couldn't init subtensor and metagraph with error: {}".format(e))
+                bt.logging.error("If you use public RPC endpoint try to move to local node")
+                time.sleep(5)
         self.hotkeys = list(self.metagraph.nodes.keys())
         self.stakes = [node.stake for node in self.metagraph.nodes.values()]
         # Serve axon to enable external connections.
@@ -160,6 +172,7 @@ class BaseValidatorNeuron(BaseNeuron):
 
         self.hotkeys = list(self.metagraph.nodes.keys())
         self.last_metagraph_sync = block
+
 
     def sync(self):
         """

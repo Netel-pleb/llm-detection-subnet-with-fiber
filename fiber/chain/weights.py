@@ -1,6 +1,7 @@
 import time
 from functools import wraps
-from typing import Any, Callable
+from typing import Any, Callable, Tuple, List
+import torch
 
 from scalecodec import ScaleType
 from substrateinterface import Keypair, SubstrateInterface
@@ -10,8 +11,12 @@ from fiber import constants as fcst
 from fiber.chain.chain_utils import format_error_message
 from fiber.chain.interface import get_substrate
 from fiber.logging_utils import get_logger
+from fiber.constants import U16_MAX
+from fiber.chain.metagraph import Metagraph
+
 
 logger = get_logger(__name__)
+
 
 
 @retry(
@@ -217,3 +222,193 @@ def set_node_weights(
 
     substrate.close()
     return success
+
+
+
+
+def process_weights_for_netuid(
+    uids,
+    weights: torch.Tensor,
+    netuid: int,
+    # subtensor: "bittensor.subtensor",
+    metagraph: Metagraph = None,
+    exclude_quantile: int = 0,
+) -> torch.FloatTensor:
+    # logger.debug("process_weights_for_netuid()")
+    # logger.debug("weights", weights)
+    # logger.debug("netuid", netuid)
+    # logger.debug("subtensor", subtensor)
+    # logger.debug("metagraph", metagraph)
+
+    # Get latest metagraph from chain if metagraph is None.
+    if metagraph == None:
+        logger.error("metagraph is none when performing process_weights_for_netuid")
+
+    # Cast weights to floats.
+    if not isinstance(weights, torch.FloatTensor):
+        weights = weights.type(torch.float32)
+
+    # Network configuration parameters from an subtensor.
+    # These parameters determine the range of acceptable weights for each neuron.
+    quantile = exclude_quantile / U16_MAX
+    min_allowed_weights = subtensor.min_allowed_weights(netuid=netuid)
+    max_weight_limit = subtensor.max_weight_limit(netuid=netuid)
+    # logger.debug("quantile", quantile)
+    # logger.debug("min_allowed_weights", min_allowed_weights)
+    # logger.debug("max_weight_limit", max_weight_limit)
+
+    
+
+    # Find all non zero weights.
+    non_zero_weight_idx = torch.argwhere(weights > 0).squeeze(dim=1)
+    non_zero_weight_uids = uids[non_zero_weight_idx]
+    non_zero_weights = weights[non_zero_weight_idx]
+    if non_zero_weights.numel() == 0 or metagraph.n < min_allowed_weights:
+        logger.warning("No non-zero weights returning all ones.")
+        final_weights = torch.ones((metagraph.n)).to(metagraph.n) / metagraph.n
+        logger.debug("final_weights", final_weights)
+        return torch.tensor(list(range(len(final_weights)))), final_weights
+
+    elif non_zero_weights.numel() < min_allowed_weights:
+        logger.warning(
+            "No non-zero weights less then min allowed weight, returning all ones."
+        )
+        # ( const ): Should this be torch.zeros( ( metagraph.n ) ) to reset everyone to build up weight?
+        weights = (
+            torch.ones((metagraph.n)).to(metagraph.n) * 1e-5
+        )  # creating minimum even non-zero weights
+        weights[non_zero_weight_idx] += non_zero_weights
+        logger.debug("final_weights", weights)
+        normalized_weights = normalize_max_weight(
+            x=weights, limit=max_weight_limit
+        )
+        return torch.tensor(list(range(len(normalized_weights)))), normalized_weights
+
+    logger.debug("non_zero_weights", non_zero_weights)
+
+    # Compute the exclude quantile and find the weights in the lowest quantile
+    max_exclude = max(0, len(non_zero_weights) - min_allowed_weights) / len(
+        non_zero_weights
+    )
+    exclude_quantile = min([quantile, max_exclude])
+    lowest_quantile = non_zero_weights.quantile(exclude_quantile)
+    logger.debug("max_exclude", max_exclude)
+    logger.debug("exclude_quantile", exclude_quantile)
+    logger.debug("lowest_quantile", lowest_quantile)
+
+    # Exclude all weights below the allowed quantile.
+    non_zero_weight_uids = non_zero_weight_uids[lowest_quantile <= non_zero_weights]
+    non_zero_weights = non_zero_weights[lowest_quantile <= non_zero_weights]
+    logger.debug("non_zero_weight_uids", non_zero_weight_uids)
+    logger.debug("non_zero_weights", non_zero_weights)
+
+    # Normalize weights and return.
+    normalized_weights = normalize_max_weight(
+        x=non_zero_weights, limit=max_weight_limit
+    )
+    logger.debug("final_weights", normalized_weights)
+
+    return non_zero_weight_uids, normalized_weights
+
+
+def normalize_max_weight(
+    x: torch.FloatTensor, limit: float = 0.1
+) -> "torch.FloatTensor":
+    r"""Normalizes the tensor x so that sum(x) = 1 and the max value is not greater than the limit.
+    Args:
+        x (:obj:`torch.FloatTensor`):
+            Tensor to be max_value normalized.
+        limit: float:
+            Max value after normalization.
+    Returns:
+        y (:obj:`torch.FloatTensor`):
+            Normalized x tensor.
+    """
+    epsilon = 1e-7  # For numerical stability after normalization
+
+    weights = x.clone()
+    values, _ = torch.sort(weights)
+
+    if x.sum() == 0 or len(x) * limit <= 1:
+        return torch.ones_like(x) / x.size(0)
+    else:
+        estimation = values / values.sum()
+
+        if estimation.max() <= limit:
+            return weights / weights.sum()
+
+        # Find the cumlative sum and sorted tensor
+        cumsum = torch.cumsum(estimation, 0)
+
+        # Determine the index of cutoff
+        estimation_sum = torch.tensor(
+            [(len(values) - i - 1) * estimation[i] for i in range(len(values))]
+        )
+        n_values = (estimation / (estimation_sum + cumsum + epsilon) < limit).sum()
+
+        # Determine the cutoff based on the index
+        cutoff_scale = (limit * cumsum[n_values - 1] - epsilon) / (
+            1 - (limit * (len(estimation) - n_values))
+        )
+        cutoff = cutoff_scale * values.sum()
+
+        # Applying the cutoff
+        weights[weights > cutoff] = cutoff
+
+        y = weights / weights.sum()
+
+        return y
+    
+    
+    
+def convert_weights_and_uids_for_emit(
+    uids: torch.LongTensor, weights: torch.FloatTensor
+) -> Tuple[List[int], List[int]]:
+    r"""Converts weights into integer u32 representation that sum to MAX_INT_WEIGHT.
+    Args:
+        uids (:obj:`torch.LongTensor,`):
+            Tensor of uids as destinations for passed weights.
+        weights (:obj:`torch.FloatTensor,`):
+            Tensor of weights.
+    Returns:
+        weight_uids (List[int]):
+            Uids as a list.
+        weight_vals (List[int]):
+            Weights as a list.
+    """
+    # Checks.
+    weights = weights.tolist()
+    uids = uids.tolist()
+    if min(weights) < 0:
+        raise ValueError(
+            "Passed weight is negative cannot exist on chain {}".format(weights)
+        )
+    if min(uids) < 0:
+        raise ValueError("Passed uid is negative cannot exist on chain {}".format(uids))
+    if len(uids) != len(weights):
+        raise ValueError(
+            "Passed weights and uids must have the same length, got {} and {}".format(
+                len(uids), len(weights)
+            )
+        )
+    if sum(weights) == 0:
+        return [], []  # Nothing to set on chain.
+    else:
+        max_weight = float(max(weights))
+        weights = [
+            float(value) / max_weight for value in weights
+        ]  # max-upscale values (max_weight = 1).
+
+    weight_vals = []
+    weight_uids = []
+    for i, (weight_i, uid_i) in enumerate(list(zip(weights, uids))):
+        uint16_val = round(
+            float(weight_i) * int(U16_MAX)
+        )  # convert to int representation.
+
+        # Filter zeros
+        if uint16_val != 0:  # Filter zeros
+            weight_vals.append(uint16_val)
+            weight_uids.append(uid_i)
+
+    return weight_uids, weight_vals

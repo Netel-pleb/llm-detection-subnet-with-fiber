@@ -32,9 +32,9 @@ from detection import version_url
 
 from substrateinterface import SubstrateInterface
 from fiber.constants import FINNEY_SUBTENSOR_ADDRESS
-from fiber.chain_interactions.metagraph import Metagraph
-from fiber.chain_interactions.interface import get_substrate
-from fiber.chain_interactions.chain_utils import load_hotkey_keypair
+from fiber.chain.metagraph import Metagraph
+from fiber.chain.interface import get_substrate
+from fiber.chain.chain_utils import load_hotkey_keypair
 from substrateinterface import SubstrateInterface, Keypair
 from datetime import date, datetime, timedelta, time
 from operator import itemgetter, attrgetter

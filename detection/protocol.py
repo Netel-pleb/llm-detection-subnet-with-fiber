@@ -14,47 +14,71 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+# import pydantic
+# from typing import List, Optional
+# import bittensor as bt
+
+# from detection import __version__
+
+
+# class TextRequest(pydantic.Basemodel):
+#     """
+#     A protocol representation which uses bt.Synapse as its base.
+#     This protocol helps in handling request and response communication between
+#     the miner and the validator.
+
+#     Attributes:
+#     - texts: List of texts that needs to be evaluated for AI generation
+#     - predictions: List of probabilities in response to texts
+
+#     """
+
+#     texts: List[str] = pydantic.Field(
+#         ...,
+#         title="Texts",
+#         description="A list of texts to check. Immuatable.",
+#         allow_mutation=False,
+#     )
+
+#     predictions: List[List[float]] = pydantic.Field(
+#         ...,
+#         title="Predictions",
+#         description="List of predicted probabilities. This attribute is mutable and can be updated.",
+#     ) 
+
+#     version: str = ""
+
 import pydantic
 from typing import List, Optional
 import bittensor as bt
 
 from detection import __version__
 
-
-class TextSynapse(bt.Synapse):
-    """
-    A protocol representation which uses bt.Synapse as its base.
-    This protocol helps in handling request and response communication between
-    the miner and the validator.
-
-    Attributes:
-    - texts: List of texts that needs to be evaluated for AI generation
-    - predictions: List of probabilities in response to texts
-
-    """
-
+class TextRequest(pydantic.BaseModel):
     texts: List[str] = pydantic.Field(
         ...,
         title="Texts",
-        description="A list of texts to check. Immuatable.",
-        allow_mutation=False,
+        description="A list of texts to check."
     )
-
+    
     predictions: List[List[float]] = pydantic.Field(
         ...,
         title="Predictions",
-        description="List of predicted probabilities. This attribute is mutable and can be updated.",
-    ) 
+        description="List of predicted probabilities."
+    )
+    
+    version: str = pydantic.Field(default="", title="Version", description="Version of the request schema.")
 
-    version: str = ""
+    # def deserialize(self) -> float:
+    #     """
+    #     Deserialize output. This method retrieves the response from
+    #     the miner in the form of self.text, deserializes it and returns it
+    #     as the output of the dendrite.query() call.
 
-    def deserialize(self) -> float:
-        """
-        Deserialize output. This method retrieves the response from
-        the miner in the form of self.text, deserializes it and returns it
-        as the output of the dendrite.query() call.
+    #     Returns:
+    #     - List[float]: The deserialized response, which in this case is the list of preidictions.
+    #     """
+    #     return self
+    
 
-        Returns:
-        - List[float]: The deserialized response, which in this case is the list of preidictions.
-        """
-        return self
+

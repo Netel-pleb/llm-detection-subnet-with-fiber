@@ -12,7 +12,7 @@ from fiber.chain import chain_utils
 from fiber.logging_utils import get_logger
 from fiber.validator import client as vali_client
 from fiber.validator import handshake
-
+from detection.protocol import TextRequest
 
 logger = get_logger(__name__)
 
@@ -26,7 +26,7 @@ async def main():
     httpx_client = httpx.AsyncClient()
 
     # Handshake with miner
-    miner_address = "http://204.44.96.131:8099"
+    miner_address = "http://108.236.147.253:8099"
     miner_hotkey_ss58_address = "5EqEKRFdvmZoVhg7bhZtrzXieQrDsN6xivnVDEkxJU5TKqzs"
     symmetric_key_str, symmetric_key_uuid = await handshake.perform_handshake(
         keypair=keypair,
@@ -40,16 +40,11 @@ async def main():
     else:
         logger.info("Wohoo - handshake worked! :)")
 
-    payload = {
-        "user_id": 12345,
-        "action": "login",
-        "timestamp": "2024-11-26T17:24:00Z",
-        "details": {
-            "ip_address": "192.168.1.1",
-            "device": "mobile",
-            "location": "New York"
-        }
-    }
+    payload = TextRequest(
+        texts=["Hello world", "Pydantic is great!", "Sample text for testing."],
+        predictions=[[0.1, 0.9], [0.8, 0.2], [0.4, 0.6]],
+        version="1.0.0"
+    )
 
     fernet = Fernet(symmetric_key_str)
 
