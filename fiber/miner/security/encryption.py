@@ -5,7 +5,7 @@ from typing import Type, TypeVar
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi import Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, parse_obj_as
 
 from fiber.logging_utils import get_logger
 from fiber.miner.core.models.config import Config
@@ -103,5 +103,5 @@ def decrypt_general_payload(
     
     print("passed data decryption", decrypted_data)
     data_dict: dict = json.loads(decrypted_data.decode())
-    content_instance = model(data=data_dict)
+    content_instance = model.parse_obj(data_dict)
     return content_instance

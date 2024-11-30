@@ -26,7 +26,7 @@ async def main():
     httpx_client = httpx.AsyncClient()
 
     # Handshake with miner
-    miner_address = "http://108.236.147.253:8099"
+    miner_address = "http://108.236.147.253:51685"
     miner_hotkey_ss58_address = "5EqEKRFdvmZoVhg7bhZtrzXieQrDsN6xivnVDEkxJU5TKqzs"
     symmetric_key_str, symmetric_key_uuid = await handshake.perform_handshake(
         keypair=keypair,
@@ -59,6 +59,7 @@ async def main():
         payload=payload,
         endpoint="/example-subnet-request",
     )
+    
     resp.raise_for_status()
     logger.info(f"Example request sent! Response: {resp.text}")
 

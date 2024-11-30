@@ -54,10 +54,10 @@ import os
 # load_dotenv("dev.env")  # Important to load this before importing anything else!
 
 from fiber.logging_utils import get_logger
+logger = get_logger(__name__)
 from fiber.miner import server
 from fiber.miner.endpoints.subnet import factory_router as get_subnet_router
 from fiber.miner.middleware import configure_extra_logging_middleware
-logger = get_logger(__name__)
 
 app = server.factory_app(debug=True)
 
@@ -109,17 +109,17 @@ class Miner(BaseMinerNeuron):
 
 
     async def forward(
-        self, synapse: detection.protocol.TextSynapse
-    ) -> detection.protocol.TextSynapse:
+        self, synapse: detection.protocol.TextRequest
+    ) -> detection.protocol.TextRequest:
         """
-        Processes the incoming 'TextSynapse' synapse by performing a predefined operation on the input data.
+        Processes the incoming 'TextRequest' synapse by performing a predefined operation on the input data.
         This method should be replaced with actual logic relevant to the miner's purpose.
 
         Args:
-            synapse (detection.protocol.TextSynapse): The synapse object containing the 'texts' data.
+            synapse (detection.protocol.TextRequest): The synapse object containing the 'texts' data.
 
         Returns:
-            detection.protocol.TextSynapse: The synapse object with the 'predictions'.
+            detection.protocol.TextRequest: The synapse object with the 'predictions'.
 
         The 'forward' function is a placeholder and should be overridden with logic that is appropriate for
         the miner's intended operation. This method demonstrates a basic transformation of input data.
@@ -150,7 +150,7 @@ class Miner(BaseMinerNeuron):
 
 
     async def blacklist(
-        self, synapse: detection.protocol.TextSynapse
+        self, synapse: detection.protocol.TextRequest
     ) -> typing.Tuple[bool, str]:
         """
         Determines whether an incoming request should be blacklisted and thus ignored. Your implementation should
@@ -161,7 +161,7 @@ class Miner(BaseMinerNeuron):
         requests before they are deserialized to avoid wasting resources on requests that will be ignored.
 
         Args:
-            synapse (detection.protocol.TextSynapse): A synapse object constructed from the headers of the incoming request.
+            synapse (detection.protocol.TextRequest): A synapse object constructed from the headers of the incoming request.
 
         Returns:
             Tuple[bool, str]: A tuple containing a boolean indicating whether the synapse's hotkey is blacklisted,
@@ -203,7 +203,7 @@ class Miner(BaseMinerNeuron):
         )
         return False, "Hotkey recognized!"
 
-    async def priority(self, synapse: detection.protocol.TextSynapse) -> float:
+    async def priority(self, synapse: detection.protocol.TextRequest) -> float:
         """
         The priority function determines the order in which requests are handled. More valuable or higher-priority
         requests are processed before others. You should design your own priority mechanism with care.
@@ -211,7 +211,7 @@ class Miner(BaseMinerNeuron):
         This implementation assigns priority to incoming requests based on the calling entity's stake in the metagraph.
 
         Args:
-            synapse (detection.protocol.TextSynapse): The synapse object that contains metadata about the incoming request.
+            synapse (detection.protocol.TextRequest): The synapse object that contains metadata about the incoming request.
 
         Returns:
             float: A priority score derived from the stake of the calling entity.

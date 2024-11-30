@@ -27,7 +27,7 @@ class Metagraph:
         self,
         substrate: SubstrateInterface | None,
         netuid: str,
-        load_old_nodes: bool = True,
+        load_old_nodes: bool = False,
     ) -> None:
         self.substrate = substrate
         self.nodes: dict[str, models.Node] = {}
@@ -35,7 +35,7 @@ class Metagraph:
         self.is_in_sync = False
         self.stop_event = threading.Event()
         self.load_old_nodes = load_old_nodes
-        print("load_old_nodes ", load_old_nodes)
+        # print("load_old_nodes ", load_old_nodes)
         # This is mainly to speed up development
         if load_old_nodes:
             logger.debug("Loading nodes from file...")

@@ -19,7 +19,7 @@ import random
 import bittensor as bt
 import numpy as np
 
-from detection.protocol import TextSynapse
+from detection.protocol import TextRequest
 from detection.attacks.data_augmentation import DataAugmentator
 from detection.validator.models import ValDataRow
 from detection.validator.reward import get_rewards
@@ -42,24 +42,15 @@ import json
 import time
 from httpx import Response
 from pydantic import ValidationError
-from fiber.chain_interactions.models import Node
+from fiber.chain.models import Node
 from fiber.validator import client
 
-
-
-
-
-
-
-
-
-
-async def dendrite_with_retries(dendrite: bt.dendrite, axons: list, synapse: TextSynapse, deserialize: bool, timeout: float, cnt_attempts=3) -> List[TextSynapse]:
-    res: List[TextSynapse | None] = [None] * len(axons)
+async def dendrite_with_retries(dendrite: bt.dendrite, axons: list, synapse: TextRequest, deserialize: bool, timeout: float, cnt_attempts=3) -> List[TextRequest]:
+    res: List[TextRequest | None] = [None] * len(axons)
     idx = list(range(len(axons)))
     axons = axons.copy()
     for attempt in range(cnt_attempts):
-        responses: List[TextSynapse] = await dendrite(
+        responses: List[TextRequest] = await dendrite(
             axons=axons,
             synapse=synapse,
             deserialize=deserialize,
@@ -119,10 +110,10 @@ async def get_all_responses(self, axons, queries: List[ValDataRow], check_ids, t
         final_labels += [auged_labels] * len(subset_axons)
 
         bt.logging.info("Quering check_ids")
-        responses: List[TextSynapse] = await dendrite_with_retries(
+        responses: List[TextRequest] = await dendrite_with_retries(
             dendrite=self.dendrite,
             axons=subset_axons,
-            synapse=TextSynapse(
+            synapse=TextRequest(
                 texts=[auged_texts[idx] for idx in check_ids],
                 predictions=[],
                 version=__version__
@@ -137,10 +128,10 @@ async def get_all_responses(self, axons, queries: List[ValDataRow], check_ids, t
             random_version = generate_random_version(
                 self.version, self.least_acceptable_version)
 
-            responses: List[TextSynapse] = await dendrite_with_retries(
+            responses: List[TextRequest] = await dendrite_with_retries(
                 dendrite=self.dendrite,
                 axons=subset_axons,
-                synapse=TextSynapse(
+                synapse=TextRequest(
                     texts=auged_texts,
                     predictions=[],
                     version=random_version
@@ -150,13 +141,13 @@ async def get_all_responses(self, axons, queries: List[ValDataRow], check_ids, t
             )
             version_responses.extend(responses)
         else:
-            version_responses.extend([TextSynapse(predictions=[], texts=[]) for _ in range(len(subset_axons))])
+            version_responses.extend([TextRequest(predictions=[], texts=[]) for _ in range(len(subset_axons))])
 
         bt.logging.info("Quering predictions")
-        responses: List[TextSynapse] = await dendrite_with_retries(
+        responses: List[TextRequest] = await dendrite_with_retries(
             dendrite=self.dendrite,
             axons=subset_axons,
-            synapse=TextSynapse(
+            synapse=TextRequest(
                 texts=auged_texts,
                 predictions=[],
                 version=__version__
@@ -189,7 +180,7 @@ async def forward(self):
     available_axon_size = len(self.metagraph.nodes) - 1  # Except our own
     miner_selection_size = min(available_axon_size, self.config.neuron.sample_size)
     miner_uids = get_random_uids(self, k=miner_selection_size)
-    
+    axons = [self.metagraph.axons[uid] for uid in miner_uids]
 
     start_time = time.time()
     queries, labels = await self.build_queries()

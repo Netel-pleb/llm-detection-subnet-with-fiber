@@ -2,7 +2,7 @@ import torch
 import random
 import bittensor as bt
 from typing import List
-
+from fiber.chain.models import Node
 
 def check_uid_availability(
     # metagraph: "bt.metagraph.Metagraph", uid: int, vpermit_tao_limit: int
@@ -67,3 +67,26 @@ def get_random_uids(
     k = min(k, len(available_uids))
     uids = torch.tensor(random.sample(available_uids, k))
     return uids
+
+
+
+def get_random_nodes(
+        self, k: int, nodes: list[Node], exclude: List[int] = None
+) -> torch.LongTensor:
+    """Returns k available random uids from the metagraph.
+    Args:
+        k (int): Number of uids to return.
+        exclude (List[int]): List of uids to exclude from the random sampling.
+    Returns:
+        uids (torch.LongTensor): Randomly sampled available uids.
+    Notes:
+        If `k` is larger than the number of available `uids`, set `k` to the number of available `uids`.
+    """
+    avail_nodes = []
+    for node in nodes:
+        if node.stake >= self.config.neuron.vpermit_tao_limit and node.node_id not in exclude:
+            avail_nodes.append(node)
+
+    k = min(k, len(avail_nodes))
+    seleted_nodes = random.sample(avail_nodes, k)
+    return seleted_nodes

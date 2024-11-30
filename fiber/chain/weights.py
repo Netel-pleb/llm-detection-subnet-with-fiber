@@ -223,22 +223,13 @@ def set_node_weights(
     substrate.close()
     return success
 
-
-
-
 def process_weights_for_netuid(
     uids,
     weights: torch.Tensor,
     netuid: int,
-    # subtensor: "bittensor.subtensor",
     metagraph: Metagraph = None,
     exclude_quantile: int = 0,
 ) -> torch.FloatTensor:
-    # logger.debug("process_weights_for_netuid()")
-    # logger.debug("weights", weights)
-    # logger.debug("netuid", netuid)
-    # logger.debug("subtensor", subtensor)
-    # logger.debug("metagraph", metagraph)
 
     # Get latest metagraph from chain if metagraph is None.
     if metagraph == None:
@@ -253,9 +244,9 @@ def process_weights_for_netuid(
     quantile = exclude_quantile / U16_MAX
     min_allowed_weights = subtensor.min_allowed_weights(netuid=netuid)
     max_weight_limit = subtensor.max_weight_limit(netuid=netuid)
-    # logger.debug("quantile", quantile)
-    # logger.debug("min_allowed_weights", min_allowed_weights)
-    # logger.debug("max_weight_limit", max_weight_limit)
+    logger.debug("quantile", quantile)
+    logger.debug("min_allowed_weights", min_allowed_weights)
+    logger.debug("max_weight_limit", max_weight_limit)
 
     
 

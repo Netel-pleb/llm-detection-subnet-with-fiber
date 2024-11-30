@@ -23,7 +23,7 @@ NONCE = "nonce"
 SIGNATURE = "signature"
 
 
-SAVE_NODES_FILEPATH = "nodes.json"
+SAVE_NODES_FILEPATH = "nodes/nodes.json"
 
 SS58_FORMAT = 42
 U16_MAX = 65535

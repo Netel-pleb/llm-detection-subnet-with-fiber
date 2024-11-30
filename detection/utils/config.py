@@ -27,13 +27,7 @@ def check_config(cls, config: "bt.Config"):
     bt.logging.check_config(config)
 
     full_path = os.path.expanduser(
-        "{}/{}/{}/netuid{}/{}".format(
-            config.logging.logging_dir,
-            config.wallet.name,
-            config.wallet.hotkey,
-            config.netuid,
-            config.neuron.name,
-        )
+        "storing"
     )
     print("full path:", full_path)
     config.neuron.full_path = os.path.expanduser(full_path)

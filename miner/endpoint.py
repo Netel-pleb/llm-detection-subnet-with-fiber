@@ -16,14 +16,18 @@ from fiber.logging_utils import get_logger
 from fiber.miner.dependencies import get_config
 from fiber.miner.core.models.config import Config
 from fiber import constants as cst
-from detection.protocol import TextRequest
-from miner.forward import forward
+import asyncio
+from config import get_subnet_config
+# from miner import forward
+# from detection.protocol import TextRequest
+from protocal import TextRequest
+# from miner.forward import forward
 logger = get_logger(__name__)
 
 # class ContentModel(BaseModel):
 #     data: Dict[str, Any]
 
-
+import time
 
 async def detection_request_handler(
     request: Request,
@@ -51,11 +55,18 @@ async def detection_request_handler(
     else:
         print("Failed to decrypt payload. Check symmetric key or decryption logic.")
 
-    print("The synapse received")
+    logger.error("The synapse received")
 
-    answer = await forward(decrypted_payload)
+    subnet_config = get_subnet_config()
+    # answer = await forward(decrypted_payload, subnet_config)
+    
+    decrypted_payload.predictions = [1, 2, 3, 4, 5]
 
-    return answer
+    await asyncio.sleep(10)
+    
+    logger.error("sent the response")
+
+    return decrypted_payload
     # return {"status": "Example request received, haha"}
 
 

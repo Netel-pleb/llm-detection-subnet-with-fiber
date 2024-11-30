@@ -61,6 +61,10 @@ def factory_config() -> Config:
         metagraph = Metagraph(substrate=None, netuid=netuid, load_old_nodes=load_old_nodes)
 
     keypair = chain_utils.load_hotkey_keypair(wallet_name, hotkey_name)
+    cold_keypair = chain_utils.load_coldkeypub_keypair(wallet_name)
+    
+    # print("\n\n\n wallet keypair", keypair)
+    # print(cold_keypair)
 
     storage_encryption_key = os.getenv("STORAGE_ENCRYPTION_KEY")
     if storage_encryption_key is None:
