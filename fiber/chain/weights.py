@@ -8,11 +8,12 @@ from substrateinterface import Keypair, SubstrateInterface
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from fiber import constants as fcst
-from fiber.chain.chain_utils import format_error_message
+from fiber.chain.chain_utils import format_error_message, query_substrate
 from fiber.chain.interface import get_substrate
 from fiber.logging_utils import get_logger
 from fiber.constants import U16_MAX
 from fiber.chain.metagraph import Metagraph
+
 
 
 logger = get_logger(__name__)
@@ -242,8 +243,24 @@ def process_weights_for_netuid(
     # Network configuration parameters from an subtensor.
     # These parameters determine the range of acceptable weights for each neuron.
     quantile = exclude_quantile / U16_MAX
-    min_allowed_weights = subtensor.min_allowed_weights(netuid=netuid)
-    max_weight_limit = subtensor.max_weight_limit(netuid=netuid)
+    # min_allowed_weights = subtensor.min_allowed_weights(netuid=netuid)
+    # max_weight_limit = subtensor.max_weight_limit(netuid=netuid)
+
+    substrate = SubstrateInterface(
+        ss58_format=42,
+        use_remote_preset=True,
+        url="wss://entrypoint-finney.opentensor.ai:443",
+    )
+    min_allowed_weights = _query_subtensor(
+        substrate=substrate,
+        name = "MinAllowedWeights",
+        params = [netuid]
+    )
+    max_weight_limit = _query_subtensor(
+        substrate=substrate,
+        name = "MaxWeightsLimit",
+        params = [netuid]
+    )
     logger.debug("quantile", quantile)
     logger.debug("min_allowed_weights", min_allowed_weights)
     logger.debug("max_weight_limit", max_weight_limit)

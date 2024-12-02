@@ -17,6 +17,7 @@ from fiber.miner.dependencies import get_config
 from fiber.miner.core.models.config import Config
 from fiber import constants as cst
 import asyncio
+from miner.forward import forward
 from config import get_subnet_config
 # from miner import forward
 # from detection.protocol import TextRequest
@@ -58,17 +59,13 @@ async def detection_request_handler(
     logger.error("The synapse received")
 
     subnet_config = get_subnet_config()
-    # answer = await forward(decrypted_payload, subnet_config)
+    answer = await forward(decrypted_payload, subnet_config)
     
-    decrypted_payload.predictions = [1, 2, 3, 4, 5]
-
     await asyncio.sleep(10)
     
     logger.error("sent the response")
 
-    return decrypted_payload
-    # return {"status": "Example request received, haha"}
-
+    return answer
 
 def factory_router() -> APIRouter:
     router = APIRouter()

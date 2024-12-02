@@ -15,7 +15,7 @@ from fiber.miner.core.models.encryption import SymmetricKeyInfo
 from fiber.miner.security.nonce_management import NonceManager
 
 logger = get_logger(__name__)
-
+SECRET_KEYS_DIR = "secret_keys"
 
 class EncryptionKeysHandler:
     def __init__(self, nonce_manager: NonceManager, storage_encryption_key: str, hotkey: str):
@@ -42,8 +42,53 @@ class EncryptionKeysHandler:
             return None
         return self.symmetric_keys_fernets[hotkey_ss58_address][uuid]
 
+    # def save_symmetric_keys(self) -> None:
+    #     filename = f"{self.hotkey}_{mcst.SYMMETRIC_KEYS_FILENAME}"
+    #     serializable_keys = {
+    #         hotkey: {
+    #             uuid: {
+    #                 "key": utils.fernet_to_symmetric_key(key_info.fernet),
+    #                 "expiration_time": key_info.expiration_time.isoformat(),
+    #             }
+    #             for uuid, key_info in keys.items()
+    #         }
+    #         for hotkey, keys in self.symmetric_keys_fernets.items()
+    #     }
+    #     json_data = json.dumps(serializable_keys)
+    #     encrypted_data = self.asymmetric_fernet.encrypt(json_data.encode())
+
+    #     logger.info(f"Saving {len(serializable_keys)} symmetric keys to {filename}")
+    #     with open(filename, "wb") as file:
+    #         file.write(encrypted_data)
+
+    # def load_symmetric_keys(self) -> None:
+    #     filename = f"{self.hotkey}_{mcst.SYMMETRIC_KEYS_FILENAME}"
+    #     if os.path.exists(filename):
+    #         with open(filename, "rb") as f:
+    #             encrypted_data = f.read()
+
+    #         decrypted_data = self.asymmetric_fernet.decrypt(encrypted_data)
+    #         loaded_keys: dict[str, dict[str, dict[str, str]]] = json.loads(decrypted_data.decode())
+
+    #         self.symmetric_keys_fernets = {
+    #             hotkey: {
+    #                 uuid: SymmetricKeyInfo(
+    #                     Fernet(key_data["key"]),
+    #                     datetime.fromisoformat(key_data["expiration_time"]),
+    #                 )
+    #                 for uuid, key_data in keys.items()
+    #             }
+    #             for hotkey, keys in loaded_keys.items()
+    #         }
+    #         logger.info(f"Loaded {len(self.symmetric_keys_fernets)} symmetric keys")
+
+    
+
     def save_symmetric_keys(self) -> None:
-        filename = f"{self.hotkey}_{mcst.SYMMETRIC_KEYS_FILENAME}"
+        # Ensure the directory exists
+        os.makedirs(SECRET_KEYS_DIR, exist_ok=True)
+        
+        filename = os.path.join(SECRET_KEYS_DIR, f"{self.hotkey}_{mcst.SYMMETRIC_KEYS_FILENAME}")
         serializable_keys = {
             hotkey: {
                 uuid: {
@@ -62,7 +107,7 @@ class EncryptionKeysHandler:
             file.write(encrypted_data)
 
     def load_symmetric_keys(self) -> None:
-        filename = f"{self.hotkey}_{mcst.SYMMETRIC_KEYS_FILENAME}"
+        filename = os.path.join(SECRET_KEYS_DIR, f"{self.hotkey}_{mcst.SYMMETRIC_KEYS_FILENAME}")
         if os.path.exists(filename):
             with open(filename, "rb") as f:
                 encrypted_data = f.read()
@@ -81,6 +126,8 @@ class EncryptionKeysHandler:
                 for hotkey, keys in loaded_keys.items()
             }
             logger.info(f"Loaded {len(self.symmetric_keys_fernets)} symmetric keys")
+
+
 
     def _clean_expired_keys(self) -> None:
         for hotkey in list(self.symmetric_keys_fernets.keys()):

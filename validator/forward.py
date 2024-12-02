@@ -152,7 +152,7 @@ async def get_all_responses(self, seleted_nodes: list[Node], queries: List[ValDa
     segmentation_processer = SegmentationProcesser()
 
     for i in range(0, len(seleted_nodes), step):
-        bt.logging.info(f"Sending challenges to the #{i} subset of miners with size {step}")
+        logger.info(f"Sending challenges to the #{i} subset of miners with size {step}")
         subset_nodes = seleted_nodes[i:i + step]
 
         auged_texts = []
@@ -170,7 +170,7 @@ async def get_all_responses(self, seleted_nodes: list[Node], queries: List[ValDa
 
         final_labels += [auged_labels] * len(subset_nodes)
 
-        bt.logging.info("Quering check_ids")
+        logger.info("Quering check_ids")
         responses: List[TextRequest] = await send_query_to_nodes(
             self,
             nodes=subset_nodes,
@@ -184,7 +184,7 @@ async def get_all_responses(self, seleted_nodes: list[Node], queries: List[ValDa
         check_responses.extend(responses)
 
         if random.random() < 0.2:
-            bt.logging.info("Quering random_version")
+            logger.info("Quering random_version")
             random_version = generate_random_version(
                 self.version, self.least_acceptable_version)
 
@@ -202,7 +202,7 @@ async def get_all_responses(self, seleted_nodes: list[Node], queries: List[ValDa
         else:
             version_responses.extend([TextRequest(predictions=[], texts=[]) for _ in range(len(subset_nodes))])
 
-        bt.logging.info("Quering predictions")
+        logger.info("Quering predictions")
         responses: List[TextRequest] = await send_query_to_nodes(
             self,
             nodes = subset_nodes,
@@ -231,9 +231,9 @@ async def forward(self):
         self (:obj:`bittensor.neuron.Neuron`): The neuron object which contains all the necessary state for the validator.
 
     """
-    bt.logging.info("Updating and querying available uids")
+    logger.info("Updating and querying available uids")
     # Define how the validator selects a miner to query, how often, etc.
-    # bt.logging.info(f"STEPS {self.step} {self.step%300} {not (self.step % 300)}")
+    logger.info(f"STEPS {self.step} {self.step%300} {not (self.step % 300)}")
 
     available_axon_size = len(self.metagraph.nodes) - 1  # Except our own
     miner_selection_size = min(available_axon_size, self.subnet_config.neuron.sample_size)
@@ -245,7 +245,7 @@ async def forward(self):
     queries, labels = await self.build_queries()
     out_of_domain_ids = np.where([el.data_source == 'common_crawl' for el in queries])[0]
     end_time = time.time()
-    bt.logging.info(f"Time to generate challenges: {int(end_time - start_time)}")
+    logger.info(f"Time to generate challenges: {int(end_time - start_time)}")
 
     cnt_challenges_for_check = random.randint(1, min(10, len(queries)))
     check_ids = np.random.choice(np.arange(len(queries)).astype(int), size=cnt_challenges_for_check, replace=False)
@@ -262,16 +262,16 @@ async def forward(self):
                                    check_ids=check_ids,
                                    out_of_domain_ids=out_of_domain_ids,
                                    update_out_of_domain=True)
-    bt.logging.info("Miner uids: {}".format(miner_uids))
-    bt.logging.info("Rewards: {}".format(rewards))
-    bt.logging.info("Metrics: {}".format(metrics))
+    logger.info("Miner uids: {}".format(miner_uids))
+    logger.info("Rewards: {}".format(rewards))
+    logger.info("Metrics: {}".format(metrics))
 
     rewards_tensor = torch.tensor(rewards).to(self.device)
 
     m = torch.nn.Softmax()
     rewards_tensor = m(rewards_tensor * 100)
 
-    bt.logging.info("Normalized rewards: {}".format(rewards_tensor))
+    logger.info("Normalized rewards: {}".format(rewards_tensor))
 
     uids_tensor = torch.tensor(miner_uids).to(self.device)
     self.update_scores(rewards_tensor, uids_tensor)

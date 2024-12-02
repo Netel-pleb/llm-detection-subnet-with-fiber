@@ -67,6 +67,5 @@ async def forward(
     logger.info(f"Made predictions in {int(time.time() - start_time)}s")
     logger.info("Request recieved in Forward func")
     print(request)
-    # request.predictions = preds
-    request.predictions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    request.predictions = preds
     return request
