@@ -17,18 +17,13 @@ from fiber.miner.dependencies import get_config
 from fiber.miner.core.models.config import Config
 from fiber import constants as cst
 import asyncio
-from miner.forward import forward
-from config import get_subnet_config
-# from miner import forward
-# from detection.protocol import TextRequest
-from protocal import TextRequest
+import time
 # from miner.forward import forward
+from miner.config import get_subnet_config
+from utils.protocol import TextRequest
+
 logger = get_logger(__name__)
 
-# class ContentModel(BaseModel):
-#     data: Dict[str, Any]
-
-import time
 
 async def detection_request_handler(
     request: Request,
@@ -39,8 +34,8 @@ async def detection_request_handler(
 ):
     # Log the encrypted payload received
     encrypted_payload = await request.body()
-    print("Encrypted Payload (raw):", encrypted_payload)
-
+    logger.info("Encrypted Payload (raw) coming from validator:")
+    logger.info(encrypted_payload)
     # Decrypt the payload directly
     decrypted_payload = decrypt_general_payload(
         model= TextRequest,
@@ -51,21 +46,31 @@ async def detection_request_handler(
         config=config
     )
 
+    time.sleep(5)
+    
     if decrypted_payload:
         print("Decrypted Payload (parsed):", decrypted_payload.dict())
     else:
         print("Failed to decrypt payload. Check symmetric key or decryption logic.")
 
-    logger.error("The synapse received")
+    logger.info("The synapse received successfully")
 
     subnet_config = get_subnet_config()
-    answer = await forward(decrypted_payload, subnet_config)
+    # answer = await forward(decrypted_payload, subnet_config)
+    logger.info("Escaping miner forward process and manually give the value of predictions")
     
     await asyncio.sleep(10)
     
-    logger.error("sent the response")
 
-    return answer
+    decrypted_payload.predictions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    
+    logger.info(decrypted_payload.dict())
+    
+    
+    logger.info("sent the response")
+    
+    return decrypted_payload.dict()
+    # return answer
 
 def factory_router() -> APIRouter:
     router = APIRouter()

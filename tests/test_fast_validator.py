@@ -8,7 +8,7 @@ from fiber.logging_utils import get_logger
 from fiber.validator import client as vali_client
 from fiber.validator import handshake
 from protocol import TextRequest
-
+import time
 logger = get_logger(__name__)
 
 async def send_queries(httpx_client, miner_address, fernet, keypair, symmetric_key_uuid, miner_hotkey_ss58_address, payload):
@@ -28,7 +28,7 @@ async def send_queries(httpx_client, miner_address, fernet, keypair, symmetric_k
                 miner_ss58_address=miner_hotkey_ss58_address,
                 payload=payload,
                 endpoint="/detection-request",
-                timeout=20
+                timeout=15
             )
         )
 
@@ -65,7 +65,25 @@ async def main():
     fernet = Fernet(symmetric_key_str)
 
     # Start sending queries
-    await send_queries(httpx_client, miner_address, fernet, keypair, symmetric_key_uuid, miner_hotkey_ss58_address, payload)
+    # await send_queries(httpx_client, miner_address, fernet, keypair, symmetric_key_uuid, miner_hotkey_ss58_address, payload) # mutliple message handliing
+    
+    response = await vali_client.make_non_streamed_post(
+        httpx_client=httpx_client,
+        server_address=miner_address,
+        fernet=fernet,
+        keypair=keypair,
+        symmetric_key_uuid=symmetric_key_uuid,
+        validator_ss58_address=keypair.ss58_address,
+        miner_ss58_address=miner_hotkey_ss58_address,
+        payload=payload,
+        endpoint="/detection-request",
+        timeout=20
+    )
+    logger.info("send the request to miner successfully.")
+    
+    logger.info("have got the answer from miner: ")
+    logger.info(response.text)    
+    logger.info("Escaping the validation mechanism")
 
 if __name__ == "__main__":
     asyncio.run(main())

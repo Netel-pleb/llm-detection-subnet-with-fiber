@@ -1,30 +1,12 @@
 # The MIT License (MIT)
 # Copyright © 2024 It's AI
 import traceback
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
-# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
-# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
-# the Software.
-
-# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
-
 import torch
 from typing import List
 import bittensor as bt
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, average_precision_score
-
-from detection.protocol import TextRequest
-import time
-
+from utils.protocol import TextRequest
 
 def reward(y_pred: np.array, y_true: np.array) -> float:
     """
@@ -49,7 +31,6 @@ def reward(y_pred: np.array, y_true: np.array) -> float:
     reward = sum([v for v in res.values()]) / len(res)
     return reward, res
 
-
 def count_penalty(
         y_pred: np.array,
         check_predictions: np.array,
@@ -65,7 +46,6 @@ def count_penalty(
         bad = 1
 
     return 0 if bad else 1
-
 
 def get_rewards(
         self,

@@ -12,8 +12,11 @@ app.include_router(subnet_router())
 
 if __name__ == "__main__":
     subnet_config = get_subnet_config()
-    print(subnet_config)
+
     import uvicorn
+    
     logger.info("Running miner")
+    
+    # you should update port that is available in your machine
     uvicorn.run(app, host="0.0.0.0", port=51685)
 

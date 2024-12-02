@@ -86,22 +86,20 @@ def decrypt_general_payload(
     miner_hotkey: str,
     config: Config,
 ) -> T:
-    print("this is executed")
-    print(f"Validator Hotkey: {validator_hotkey}")
-    print(f"Miner Hotkey: {miner_hotkey}")
-    print(config)
+    logger.info("Validator Hotkey:")
+    logger.info(validator_hotkey)
+    logger.info("miner_hotkey:")
+    logger.info(miner_hotkey)
     print(f"Decrypting payload from validator {validator_hotkey} for miner {miner_hotkey}")
     
     symmetric_key_info = config.encryption_keys_handler.get_symmetric_key(validator_hotkey, symmetric_key_uuid)
     if not symmetric_key_info:
         raise HTTPException(status_code=400, detail="No symmetric key found for that hotkey and uuid")
 
-    
-    
-    print("passed successfully to get_symmetric_key = ", symmetric_key_info)
+    logger.info("passed successfully to get_symmetric_key = ", symmetric_key_info)
     decrypted_data = symmetric_key_info.fernet.decrypt(encrypted_payload)
     
-    print("passed data decryption", decrypted_data)
+    logger.info("passed data decryption", decrypted_data)
     data_dict: dict = json.loads(decrypted_data.decode())
     content_instance = model.parse_obj(data_dict)
     return content_instance
