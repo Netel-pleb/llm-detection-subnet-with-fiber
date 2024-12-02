@@ -1,104 +1,50 @@
 # The MIT License (MIT)
 # Copyright © 2024 It's AI
+import asyncio
+import copy
+import datetime as dt
+import json
+import os
 import random
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
-# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
-# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
-# the Software.
-
-# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
-
-import bittensor as bt
+import threading
+import time
+from datetime import date, datetime, timedelta
+from typing import List, Tuple
 import numpy as np
+import bittensor as bt
+import httpx
+import torch
+import wandb
+from cryptography.fernet import Fernet
+from dotenv import load_dotenv
+from pydantic import ValidationError
+from substrateinterface import SubstrateInterface, Keypair
 
-from detection.protocol import TextRequest
+from detection import __version__, WANDB_PROJECT, WANDB_ENTITY, MAX_RUN_STEPS_PER_WANDB_RUN
 from detection.attacks.data_augmentation import DataAugmentator
-from detection.validator.models import ValDataRow
-from validator.reward import get_rewards
+from detection.protocol import TextRequest
 from detection.utils.uids import get_random_uids, get_random_nodes
 from detection.validator.generate_version import generate_random_version
-
-from detection import __version__
-
-import time
-from typing import List
-import torch
-
+from detection.validator.models import ValDataRow
 from detection.validator.segmentation_processer import SegmentationProcesser
-
-import os
-
-from dotenv import load_dotenv
-
-load_dotenv()
-import asyncio
-
-import httpx
-from cryptography.fernet import Fernet
-
+from validator.reward import get_rewards
 from fiber.chain import chain_utils
-from fiber.logging_utils import get_logger
-from fiber.validator import client as vali_client
-from fiber.validator import handshake
-from detection.protocol import TextRequest
-
-logger = get_logger(__name__)
-
-
-import copy
-import torch
-import asyncio
-import threading
-import bittensor as bt
-import bittensor
-from typing import List
-from traceback import print_exception
-
-from detection.base.neuron import BaseNeuron
-from detection import (
-    __version__, WANDB_PROJECT,
-    WANDB_ENTITY, MAX_RUN_STEPS_PER_WANDB_RUN
-)
-
-import datetime as dt
-import wandb
-import time
-
-import json
-
-
-
-
-
-from substrateinterface import SubstrateInterface
-from fiber.constants import FINNEY_SUBTENSOR_ADDRESS
 from fiber.chain.metagraph import Metagraph
 from fiber.chain.interface import get_substrate
 from fiber.chain.chain_utils import load_hotkey_keypair
-from substrateinterface import SubstrateInterface, Keypair
-from datetime import date, datetime, timedelta, time
 from fiber.chain.weights import set_node_weights, process_weights_for_netuid, convert_weights_and_uids_for_emit
-from typing import Tuple
 from fiber.chain.post_ip_to_chain import post_node_ip_to_chain
 from fiber.chain.models import Node
-import httpx
+from fiber.logging_utils import get_logger
+from fiber.validator import client as vali_client
+from fiber.validator import handshake
 from fiber.validator import handshake, client
-from cryptography.fernet import Fernet
 
-import json
-import time
-from httpx import Response
-from pydantic import ValidationError
-from fiber.chain.models import Node
-from fiber.validator import client
+# Load environment variables
+load_dotenv()
+
+# Initialize logger
+logger = get_logger(__name__)
 
 async def send_query_to_nodes(self, nodes: list[Node], synapse: TextRequest, timeout: float) -> List[TextRequest]:
     res: List[TextRequest | None] = [None] * len(nodes)

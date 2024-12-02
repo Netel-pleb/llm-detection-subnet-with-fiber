@@ -1,91 +1,46 @@
-from fiber.logging_utils import get_logger
-import copy
-import time
+
 import requests
 import re
-
-import bittensor as bt
-
-from abc import ABC, abstractmethod
-
-# Sync calls set weights and also resyncs the metagraph.
-from detection.utils.config import check_config, add_args, config
-from detection.utils.misc import ttl_get_block
-from detection import __spec_version__ as spec_version
-from detection import version_url
-
+import torch
+import numpy as np
+import wandb
+import time
+import json
+import copy
+import torch
 import asyncio
-from utils.version import get_version
-from substrateinterface import SubstrateInterface
+import datetime as dt
+import httpx
+import traceback
+
+from cryptography.fernet import Fernet
+from utils.version import get_version, __version__, last_acceptable_version
+from typing import List
+from detection import version_url
+from validator.config import get_subnet_config
 from fiber.constants import FINNEY_SUBTENSOR_ADDRESS
 from fiber.chain.metagraph import Metagraph
 from fiber.chain.interface import get_substrate
 from fiber.chain.chain_utils import load_hotkey_keypair, load_coldkeypub_keypair
-from substrateinterface import SubstrateInterface, Keypair
-from datetime import date, datetime, timedelta, time
-from operator import itemgetter, attrgetter
-import copy
-import torch
-import asyncio
-import threading
-import bittensor as bt
-import bittensor
+from fiber.logging_utils import get_logger
+from fiber.constants import FINNEY_SUBTENSOR_ADDRESS
+from fiber.chain.weights import set_node_weights, process_weights_for_netuid, convert_weights_and_uids_for_emit
+from fiber.chain.post_ip_to_chain import post_node_ip_to_chain
+from fiber.chain.models import Node
+from fiber.validator import handshake, client
+from datetime import datetime, time
 from typing import List
 from traceback import print_exception
-
-from detection.base.neuron import BaseNeuron
+from detection.validator.data_generator import DataGenerator
+from detection.validator.models import ValDataRow
+from detection.validator.text_completion import OllamaModel
 from detection import (
     __version__, WANDB_PROJECT,
     WANDB_ENTITY, MAX_RUN_STEPS_PER_WANDB_RUN
 )
-
-import datetime as dt
-import wandb
-import time
-
-import json
-
-
-
-
-
-from substrateinterface import SubstrateInterface
-from fiber.constants import FINNEY_SUBTENSOR_ADDRESS
-from fiber.chain.metagraph import Metagraph
-from fiber.chain.interface import get_substrate
-from fiber.chain.chain_utils import load_hotkey_keypair
-from substrateinterface import SubstrateInterface, Keypair
-from datetime import date, datetime, timedelta, time
-from fiber.chain.weights import set_node_weights, process_weights_for_netuid, convert_weights_and_uids_for_emit
-from typing import Tuple
-from fiber.chain.post_ip_to_chain import post_node_ip_to_chain
-from fiber.chain.models import Node
-import httpx
-from fiber.validator import handshake, client
-from cryptography.fernet import Fernet
-import time
-import os
-import random
-import traceback
-from typing import List
-
-import bittensor as bt
-import torch
-import numpy as np
-
-import detection
-from detection.validator import forward
-from detection.base.validator import BaseValidatorNeuron
-
-from detection.validator.data_generator import DataGenerator
-from detection.validator.models import ValDataRow
-from detection.validator.text_completion import OllamaModel
 from validator.forward import forward
 
 logger = get_logger(__name__)
-from validator.config import get_subnet_config
-
-
 
 class Validator:
     
@@ -106,17 +61,14 @@ class Validator:
         # If a gpu is required, set the device to cuda:N (e.g. cuda:0)
         self.device = self.subnet_config.neuron.device
         self.version = get_version()
-        # Build Bittensor objects
-        # These are core Bittensor classes to interact with the network.
+
         logger.info("Setting up bittensor objects.")
 
         while True:
             try:
                 logger.info("Initializing subtensor and metagraph")
-                # self.subtensor = bt.subtensor(config=self.subnet_config)
-                # self.metagraph = self.subtensor.metagraph(self.subnet_config.netuid)
                 
-                self.subtensor_url = FINNEY_SUBTENSOR_ADDRESS
+                self.subtensor_url = FINNEY_SUBTENSOR_ADDRESS # this should be customized according to your specific need
                 
                 logger.info(f"Subtensor url: {self.subtensor_url}")
                 
@@ -140,8 +92,6 @@ class Validator:
 
         logger.info(f"Metagraph: {self.metagraph}")
 
-        
-
         # Check if the miner is registered on the Bittensor network before proceeding further.
         self.check_registration()
 
@@ -152,7 +102,7 @@ class Validator:
             wallet_name=self.subnet_config.wallet_name,
             hotkey_name=self.subnet_config.wallet_hotkey,
         )        
-        self.coldkey_keypair = load_coldkeypub_keypair(wallet_name = self.subnet_config.wallet.name)
+        self.coldkey_keypair = load_coldkeypub_keypair(wallet_name = self.subnet_config.wallet_name)
         
         self.hotkey = self.keypair.ss58_address
         self.coldkey = self.coldkey_keypair.ss58_address
@@ -160,14 +110,17 @@ class Validator:
         self.stakes = [node.stake for node in self.metagraph.nodes.values()]
         self.uids = [node.node_id for node in self.metagraph.nodes.values()]
         self.hotkeys = list(self.metagraph.nodes.keys())
+        
         logger.info(
             f"Running neuron on subnet: {self.subnet_config.netuid} with uid {self.uid} using network: {self.subtensor_url}"
         )
+        
         self.step = 0
         self.last_metagraph_sync = 0
         self.should_serve_axon = self.subnet_config.should_serve_axon
         self.external_ip = self.subnet_config.external_ip
         self.external_port=self.subnet_config.external_port
+        
         if self.should_serve_axon:
             try:
                 success = post_node_ip_to_chain(
@@ -187,8 +140,6 @@ class Validator:
             
         self.wandb_run = None
 
-        # Dendrite lets us send messages to other nodes (axons) in the network.
-        # Set up initial scoring weights for validation
         logger.info("Building validation weights.")
 
         # Instead of loading zero weights we take latest weights from the previous run
@@ -197,17 +148,13 @@ class Validator:
 
         # Init sync with the network. Updates the metagraph.
         self.sync()
+        
         self.new_wandb_run()
-        # Create asyncio event loop to manage async tasks.
-        # self.loop = asyncio.get_event_loop()
 
         # Instantiate runners
         self.should_exit: bool = False
         self.is_running: bool = False
-        # self.thread: threading.Thread = None
-        # self.lock = asyncio.Lock()        
-        logger.info("Initializing Validator")
-
+     
         logger.info("load_state()")
         self.load_state()
 
@@ -253,10 +200,9 @@ class Validator:
         labels = [el.segmentation_labels for el in data]
         return texts, labels,
         
-        
     def parse_versions(self):
-        self.version = "10.0.0"
-        self.least_acceptable_version = "0.0.0"
+        self.version = __version__
+        self.least_acceptable_version = last_acceptable_version
 
         logger.info(f"Parsing versions...")
         response = requests.get(version_url)
@@ -283,7 +229,6 @@ class Validator:
         Wrapper for synchronizing the state of the network for the given validator.
         """
         # Ensure miner or validator hotkey is still registered on the network.
-        # self.check_registered()
         self.check_registration()
 
         try:
@@ -302,8 +247,6 @@ class Validator:
             logger.error("Coundn't sync metagraph or set weights: {}".format(e))
             logger.error("If you use public RPC endpoint try to move to local node")
             time.sleep(5)
-            
-            
             
     def should_set_weights(self) -> bool:
         last_update = self.metagraph.nodes[self.keypair.ss58_address].last_updated
@@ -326,8 +269,6 @@ class Validator:
             logger.error(
                 f"Wallet: {self.keypair} is not registered on netuid {self.metagraph.netuid}."
             )
- 
-    
     
     async def try_handshake(
         self,
@@ -353,9 +294,6 @@ class Validator:
                 async_client, server_address, self.keypair, node.hotkey
             )
         except Exception as e:
-            # error_details = _format_exception(e)
-            # logger.debug(f"Failed to perform handshake with {server_address}. Details:\n{error_details}")
-
             if isinstance(e, (httpx.HTTPStatusError, httpx.RequestError, httpx.ConnectError)):
                 if hasattr(e, "response"):
                     # logger.debug(f"Response content: {e.response.text}")
@@ -384,13 +322,9 @@ class Validator:
             node for node in shaked_nodes if node.fernet is not None and node.symmetric_key_uuid is not None
         ]
         if len(nodes_where_handshake_worked) == 0:
-            # logger.info("❌ Failed to perform handshakes with any nodes!")
-            pass
+            logger.info("❌ Failed to perform handshakes with any nodes!")
             return []
-        # logger.info(f"✅ performed handshakes successfully with {len(nodes_where_handshake_worked)} nodes!")
-
-        # async with await config.psql_db.connection() as connection:
-        #     await insert_symmetric_keys_for_nodes(connection, nodes_where_handshake_worked)
+        logger.info(f"✅ performed handshakes successfully with {len(nodes_where_handshake_worked)} nodes!")
 
         return shaked_nodes    
 
@@ -512,17 +446,12 @@ class Validator:
         # Copies state of metagraph before syncing.
         previous_metagraph = copy.deepcopy(self.metagraph)
         
-        # Sync the metagraph.
-        # self.metagraph.sync(subtensor=self.subtensor)
         nodes = self.metagraph.nodes()
         
         self.metagraph.sync_nodes()
 
         self.check_registration()
 
-        # Check if the metagraph axon info has changed.
-        # if previous_metagraph.axons == self.metagraph.axons:
-        #     return
         if self.hotkeys == list(self.metagraph.nodes.keys()):
             return
         
@@ -532,7 +461,7 @@ class Validator:
         
         for uid, hotkey in enumerate(self.hotkeys):
             if hotkey != nodes[uid].hotkey:
-                self.scores[uid] = 0  # hotkey has been replaced
+                self.scores[uid] = 0  
 
         # Check to see if the metagraph has changed size.
         # If so, we need to add new hotkeys and moving averages.
@@ -550,7 +479,6 @@ class Validator:
         self.uids = [node.node_id for node in self.metagraph.nodes.values()]
         self.hotkeys = list(self.metagraph.nodes.keys())        
         self.last_metagraph_sync = self.block
-        
 
     def set_weights(self):
         """

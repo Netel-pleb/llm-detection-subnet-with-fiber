@@ -16,7 +16,6 @@ from detection.protocol import TextRequest
 
 logger = get_logger(__name__)
 
-
 async def main():
     # Load needed stuff
     wallet_name = os.getenv("WALLET_NAME", "default")

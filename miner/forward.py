@@ -10,7 +10,6 @@ import detection
 from detection.utils.weight_version import is_version_in_range
 
 # import base miner class which takes care of most of the boilerplate
-from detection.base.miner import BaseMinerNeuron
 from neurons.miners.ppl_model import PPLModel
 
 from transformers.utils import logging as hf_logging
@@ -19,7 +18,7 @@ from neurons.miners.deberta_classifier import DebertaClassifier
 
 hf_logging.set_verbosity(40)
 
-from config import Subnet_Config
+from miner.config import Subnet_Config
 from fiber.logging_utils import get_logger
 logger = get_logger(__name__)
 
